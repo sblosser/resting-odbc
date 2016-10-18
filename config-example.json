@@ -1,0 +1,8 @@
+{
+  "dsn": [
+    {
+      "name": "myDb",
+      "conn": "Driver={Microsoft Visual FoxPro Driver};SourceType=DBC;SourceDB=E:\\DB\\somedir\\mydatabase.dbc;Exclusive=No;NULL=NO;Collate=Machine;BACKGROUNDFETCH=NO;DELETED=YES;"
+    }
+  ]
+}
