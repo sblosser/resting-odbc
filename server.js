@@ -2,13 +2,15 @@
 
 const fs = require('fs');
 const Hapi = require('hapi');
+const squel = require('squel');
+const pluralize = require('pluralize');
 
-let formats = {};
-const normalizedPath = require("path").join(__dirname, "formats");
+let resources = {};
+const normalizedPath = require('path').join(__dirname, 'resources');
 fs.readdirSync(normalizedPath).forEach(function(file) {
-  const formatName = file.split('.')[0];
-  formats[formatName] = require("./formats/" + file);
-})
+  const resourceName = file.split('.')[0];
+  resources[resourceName] = require('./resources/' + file);
+});
 
 const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 
@@ -20,59 +22,32 @@ for (const dsn of config.dsn) {
   });
 }
 
-const customEncode = function(data, table) {
-  let encoded = {};
-  if (formats[table]) {
-    console.log('Using custom encoder: ' + table);
-    encoded[table] = formats[table].encode(data);
-    return encoded;
-  } else {
-    console.log('Usting standard encoder');
-    encoded[table] = data;
-    return encoded;
-  }
-}
-
-const customDecode = function(data, table) {
-  if (formats[table]) {
-    return formats[table].decode(data);
-  } else {
-    return JSON.parse(data);
-  }
-}
-
-const server = new Hapi.Server();
-server.connection({
-  port: 6322
-});
-
-const getHandler = function(request, reply) {
+const getHandler = function(resource, request, reply) {
   const dsn = request.params.dsn;
-  const table = request.params.table;
-  let sql = "SELECT * FROM " + table;
-  let bindingParameters = [];
+  const table = resource.tableName;
+  let sql = squel.select().from(table);
+  // let bindingarameters = [];
 
   if (request.params.id) {
     // we were sent an ID to get one record
-    if (formats[table].id) {
-      sql = sql + " WHERE " + formats[table].id + " = ?";
-      bindingParameters.push(request.params.id);
+    if (resource.id) {
+      sql = sql.where(resource.id + ' = ?', request.params.id);
     } else {
-      return reply(JSON.stringify({error: "No ID field defined"}))
+      return reply(JSON.stringify({error: 'No ID field defined'}))
         .type('application/json')
         .code(500);
     }
   } else if (request.query === {}) {
     // no query parameters
   } else {
-    sql = sql + " WHERE";
     for (let key in request.query) {
-      sql = sql + " " + key + " = ? AND"
-      bindingParameters.push(request.query[key]);
+      sql = sql.where(key + ' = ?', request.query[key]);
     }
-    sql = sql.substring(0, sql.length-3);
   }
-  db[dsn].query(sql, bindingParameters, function(err, data) {
+  const sqlString = sql.toString();
+  console.log('Sending SQL:', sqlString);
+  db[dsn].query(sqlString, function(err, data) {
+    console.log('Rows:', data.length);
     let statusCode = 200;
     if (err) {
       statusCode = 500;
@@ -84,7 +59,7 @@ const getHandler = function(request, reply) {
       if (data.length === 0) {
         statusCode = 404;
       }
-      const encoded = customEncode(data, table);
+      const encoded = resource.encode(pluralize, data);
       return reply(JSON.stringify(encoded))
         .type('application/json')
         .code(statusCode);
@@ -92,16 +67,36 @@ const getHandler = function(request, reply) {
   });
 };
 
-server.route({
-  method: 'GET',
-  path: '/{dsn}/{table}/{id}',
-  handler: getHandler
-})
+const getSingleHandler = function(request, reply) {
+  const resourceName = request.params.resource;
+  const resource = resources[resourceName];
+  return getHandler(resource, request, reply);
+};
+
+const getMultiHandler = function(request, reply) {
+  const resourceName = pluralize(request.params.resource, 1);
+  const resource = resources[resourceName];
+  return getHandler(resource, request, reply);
+};
+
+const server = new Hapi.Server();
+server.connection({
+  port: 6322,
+  routes: {
+    cors: true
+  }
+});
 
 server.route({
   method: 'GET',
-  path: '/{dsn}/{table}',
-  handler: getHandler
+  path: '/{dsn}/{resource}/{id}',
+  handler: getSingleHandler
+});
+
+server.route({
+  method: 'GET',
+  path: '/{dsn}/{resource}',
+  handler: getMultiHandler
 });
 
 server.start(function(err) {
@@ -109,4 +104,4 @@ server.start(function(err) {
     throw err;
   }
   console.log('Server running');
-})
+});

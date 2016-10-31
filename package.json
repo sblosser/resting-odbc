@@ -10,6 +10,8 @@
   "license": "AGPL-3.0",
   "dependencies": {
     "hapi": "^15.1.1",
-    "odbc": "^1.2.1"
+    "odbc": "^1.2.1",
+    "pluralize": "^3.0.0",
+    "squel": "^5.5.0"
   }
 }
